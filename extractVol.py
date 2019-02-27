@@ -1,4 +1,3 @@
-
 import sys
 import json
 import struct
@@ -6,10 +5,14 @@ import glob
 
 import os
 
-
-from collections import namedtuple
-
 importFilenames = sys.argv[1:]
+
+compressionTypes = {
+    0: "none",
+    1: "rle",
+    2: "lz",
+    3: "lzh"
+}
 
 for importFilename in importFilenames:
 
@@ -18,56 +21,62 @@ for importFilename in importFilenames:
         with open(importFilename, "rb") as input_fd:
             rawData = input_fd.read()
 
-	destDir = importFilename.replace(".vol", "").replace(".VOL", "")
-	offset = 0
-	headerFmt = "<4sL"
-	fileFmt = "<4sL"
-	itemHeaderFmt = "<4sL"
-	itemFmt = "<4LB"
-	footerFmt = "<4sL4sL4sL"
-	(header, totalFileLength) = struct.unpack_from(headerFmt, rawData, offset)
-	print (header, totalFileLength)
+        destDir = importFilename.replace(".vol", "").replace(".VOL", "")
+        offset = 0
+        headerFmt = "<4sL"
+        fileFmt = "<4s4s"
+        itemHeaderFmt = "<4sL"
+        itemFmt = "<4LB"
+        footerFmt = "<4sL4sL4sL"
+        (header, totalFileLength) = struct.unpack_from(headerFmt, rawData, offset)
+
+        if "VOL" not in header:
+            raise ValueError("File header is not VOL as expected")
+
         offset = totalFileLength
         footer = struct.unpack_from(footerFmt, rawData, offset)
-	offset += struct.calcsize(footerFmt)
-	fileListEndIndex = offset + footer[-1]
-	filenames = []
-	fileInfo = []
-	while offset < fileListEndIndex:
-		endIndex = rawData.index("\0", offset)
-		filenames.append(rawData[offset:endIndex])
-		offset += (endIndex - offset + 1)
 
-	offset = rawData.index("voli", offset)
-	itemsHeader = struct.unpack_from(itemHeaderFmt, rawData, offset)
-	offset += struct.calcsize(itemHeaderFmt) 
-	for i in range(len(filenames)):
-		print struct.unpack_from(itemFmt, rawData, offset)	
-		offset += struct.calcsize(itemFmt) 
-	offset = 0
-	files = []
-	fileIndex = 0
-	
-	if not os.path.exists(destDir):
-	    os.makedirs(destDir)
+        if footer[0] != "vols":
+            raise ValueError("vols section not found")
 
-	while offset < totalFileLength:
-		offset = rawData.find("VBLK", offset + 1)
-		
-		if offset == -1:
-			break
-		rawFileheader = rawData[offset:offset + struct.calcsize(fileFmt)]
-		rawFileheader = rawFileheader[:-1]  +  "\0"
-		(fileHeader, fileLength) = struct.unpack(fileFmt, rawFileheader)
-		offset += struct.calcsize(fileFmt)
-		print (filenames[fileIndex], fileLength)
-	#	with open(destDir + "/" + filenames[fileIndex],"w") as shapeFile:
-	#	        newFileByteArray = bytearray(rawData[offset:offset + fileLength])
-	#	        shapeFile.write(newFileByteArray)
-		fileIndex += 1
+    	offset += struct.calcsize(footerFmt)
+    	fileListEndIndex = offset + footer[-1]
+    	filenames = []
+    	fileInfo = []
+    	while offset < fileListEndIndex:
+    		endIndex = rawData.index("\0", offset)
+    		filenames.append(rawData[offset:endIndex])
+    		offset += (endIndex - offset + 1)
 
+    	offset = rawData.index("voli", offset)
+    	itemsHeader = struct.unpack_from(itemHeaderFmt, rawData, offset)
 
+        if itemsHeader[0] != "voli":
+            raise ValueError("voli section not found")
 
-	
+    	offset += struct.calcsize(itemHeaderFmt)
+        finalOffset = offset + itemsHeader[1]
+    	while offset < finalOffset:
+            item = struct.unpack_from(itemFmt, rawData, offset)
+            print item
+            fileInfo.append(item)
+            offset += struct.calcsize(itemFmt)
+    	offset = 0
+    	files = []
+
+    	if not os.path.exists(destDir):
+    	    os.makedirs(destDir)
+
+    	for index, info in enumerate(fileInfo):
+            offset = info[2]
+            (fileHeader, fileLengthRaw) = struct.unpack_from(fileFmt, rawData, offset)
+            (fileLength,) = struct.unpack("<L", fileLengthRaw[:-1] + "\0")
+            offset += struct.calcsize(fileFmt)
+            if fileHeader == "VBLK":
+                print "writing " + destDir + "/" + filenames[index]
+                with open(destDir + "/" + filenames[index],"w") as shapeFile:
+        		        newFileByteArray = bytearray(rawData[offset:offset + info[3]])
+        		        shapeFile.write(newFileByteArray)
+
     except Exception as e:
         print e
