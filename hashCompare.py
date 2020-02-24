@@ -8,7 +8,8 @@ file2 = filesToCompare[1]
 outputFile = filesToCompare[2]
 
 compareResults = {
-    "filesMissing": [],
+    "filesAdded": [],
+    "filesRemoved": [],
     "filesMatching": [],
     "filesChanged": []
 }
@@ -20,9 +21,13 @@ with open(file2, "r") as manifestFile:
     manifest2 = json.loads(manifestFile.read())
 
 
+for key in manifest2:
+    if key not in manifest2:
+        compareResults["filesAdded"].append(key)
+
 for key in manifest1:
     if key not in manifest2:
-        compareResults["filesMissing"].append(key)
+        compareResults["filesRemoved"].append(key)
 
     if key in manifest2 and manifest1[key] == manifest2[key]:
         compareResults["filesMatching"].append(key)
